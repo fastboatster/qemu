@@ -103,11 +103,55 @@ static void tricore_testboard_init(MachineState *machine, int board_id)
     }
 }
 
+static void tricore_tsim161_init(MachineState *machine, int board_id)
+{
+    TriCoreCPU *cpu;
+    CPUTriCoreState *env;
+
+    MemoryRegion *sysmem = get_system_memory();
+    MemoryRegion *ext_cram = g_new(MemoryRegion, 1);
+    MemoryRegion *ext_dram = g_new(MemoryRegion, 1);
+    MemoryRegion *int_cram = g_new(MemoryRegion, 1);
+    MemoryRegion *int_dram = g_new(MemoryRegion, 1);
+    MemoryRegion *int_ldram = g_new(MemoryRegion, 1);
+    MemoryRegion *pcp_data = g_new(MemoryRegion, 1);
+    MemoryRegion *pcp_text = g_new(MemoryRegion, 1);
+
+    cpu = TRICORE_CPU(cpu_create(machine->cpu_type));
+    env = &cpu->env;
+    memory_region_init_ram(ext_cram, NULL, "powerlink_ext_c.ram",16 * MiB, &error_fatal);
+    memory_region_init_ram(ext_dram, NULL, "powerlink_ext_d.ram",4 * MiB, &error_fatal);
+    memory_region_init_ram(int_cram, NULL, "powerlink_int_c.ram",16 * MiB,&error_fatal);
+    memory_region_init_ram(int_dram, NULL, "powerlink_int_d.ram",16 * MiB,&error_fatal);
+    memory_region_init_ram(int_ldram, NULL, "powerlink_int_ld.ram",16 * MiB,&error_fatal);
+    memory_region_init_ram(pcp_data, NULL, "powerlink_pcp_data.ram",16 * KiB, &error_fatal);
+    memory_region_init_ram(pcp_text, NULL, "powerlink_pcp_text.ram",32 * KiB, &error_fatal);
+
+    memory_region_add_subregion(sysmem, 0x80000000, ext_cram);
+    memory_region_add_subregion(sysmem, 0xa1000000, ext_dram);
+    memory_region_add_subregion(sysmem, 0xc0000000, int_cram);
+    memory_region_add_subregion(sysmem, 0xd0000000, int_dram);
+    memory_region_add_subregion(sysmem, 0x70000000, int_ldram);
+    memory_region_add_subregion(sysmem, 0xf0050000, pcp_data);
+    memory_region_add_subregion(sysmem, 0xf0060000, pcp_text);
+
+    tricoretb_binfo.ram_size = machine->ram_size;
+    tricoretb_binfo.kernel_filename = machine->kernel_filename;
+
+    if (machine->kernel_filename) {
+        tricore_load_kernel(env);
+    }
+}
+
 static void tricoreboard_init(MachineState *machine)
 {
     tricore_testboard_init(machine, 0x183);
 }
 
+static void tsim161_init(MachineState *machine)
+{
+    tricore_tsim161_init(machine, 0x184);
+}
 static void ttb_machine_init(MachineClass *mc)
 {
     mc->desc = "a minimal TriCore board";
@@ -115,4 +159,13 @@ static void ttb_machine_init(MachineClass *mc)
     mc->default_cpu_type = TRICORE_CPU_TYPE_NAME("tc1796");
 }
 
+static void ttb_tsim161_init(MachineClass *mc)
+{
+    mc->desc = "Tsim161";
+    mc->init = tsim161_init;
+    mc->default_cpu_type = TRICORE_CPU_TYPE_NAME("tc161");
+}
+
+
 DEFINE_MACHINE("tricore_testboard", ttb_machine_init)
+DEFINE_MACHINE("tricore_tsim161", ttb_tsim161_init)
