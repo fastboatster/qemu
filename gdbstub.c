@@ -3096,6 +3096,11 @@ static void gdb_read_byte(uint8_t ch)
     }
 }
 
+int gdb_state(void)
+{
+	return gdbserver_state.init;
+}
+
 /* Tell the remote gdb that the process has exited.  */
 void gdb_exit(int code)
 {

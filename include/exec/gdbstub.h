@@ -56,6 +56,7 @@ void gdb_set_stop_cpu(CPUState *cpu);
  * detritus before returning.
  */
 void gdb_exit(int code);
+int gdb_state(void);
 
 #ifdef CONFIG_USER_ONLY
 /**
