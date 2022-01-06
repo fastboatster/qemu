@@ -84,8 +84,15 @@ raise_exception_sync_internal(CPUTriCoreState *env, uint32_t class, int tin,
       ICR.IE and ICR.CCPN are saved */
 
     /* PCXI.PIE = ICR.IE */
-    env->PCXI = ((env->PCXI & ~MASK_PCXI_PIE_1_3) +
-                ((env->ICR & MASK_ICR_IE_1_3) << 15));
+    if (tricore_feature(env, TRICORE_FEATURE_16)) {
+        env->PCXI = ((env->PCXI & ~MASK_PCXI_PIE_1_6) +
+                    ((env->ICR & MASK_ICR_IE_1_6) << 6));
+       }
+    else if (tricore_feature(env, TRICORE_FEATURE_13))
+   	{
+    	    env->PCXI = ((env->PCXI & ~MASK_PCXI_PIE_1_3) +
+    	                ((env->ICR & MASK_ICR_IE_1_3) << 15));
+   	}
     /* PCXI.PCPN = ICR.CCPN */
     env->PCXI = (env->PCXI & 0xffffff) +
                 ((env->ICR & MASK_ICR_CCPN) << 24);
@@ -105,6 +112,13 @@ static void raise_exception_sync_helper(CPUTriCoreState *env, uint32_t class,
                                         uint32_t tin, uintptr_t pc)
 {
     raise_exception_sync_internal(env, class, tin, pc, 0);
+}
+
+void helper_qemu_excp(CPUTriCoreState *env, uint32_t excp)
+{
+    CPUState *cs = env_cpu(env);
+    cs->exception_index = excp;
+    cpu_loop_exit(cs);
 }
 
 /* Addressing mode helper */
@@ -2464,10 +2478,18 @@ void helper_call(CPUTriCoreState *env, uint32_t next_pc)
     env->PCXI = (env->PCXI & 0xffffff) +
                 ((env->ICR & MASK_ICR_CCPN) << 24);
     /* PCXI.PIE = ICR.IE; */
-    env->PCXI = ((env->PCXI & ~MASK_PCXI_PIE_1_3) +
-                ((env->ICR & MASK_ICR_IE_1_3) << 15));
     /* PCXI.UL = 1; */
-    env->PCXI |= MASK_PCXI_UL;
+    if (tricore_feature(env, TRICORE_FEATURE_16)) {
+        env->PCXI = ((env->PCXI & ~MASK_PCXI_PIE_1_6) +
+                    ((env->ICR & MASK_ICR_IE_1_6) << 6));
+	    env->PCXI |= MASK_PCXI_UL_1_6;
+       }
+       else if (tricore_feature(env, TRICORE_FEATURE_13))
+   	{
+    	    env->PCXI = ((env->PCXI & ~MASK_PCXI_PIE_1_3) +
+    	                ((env->ICR & MASK_ICR_IE_1_3) << 15));
+    	    env->PCXI |= MASK_PCXI_UL_1_3;
+   	}
 
     /* PCXI[19: 0] = FCX[19: 0]; */
     env->PCXI = (env->PCXI & 0xfff00000) + (env->FCX & 0xfffff);
@@ -2506,12 +2528,23 @@ void helper_ret(CPUTriCoreState *env)
         raise_exception_sync_helper(env, TRAPC_CTX_MNG, TIN3_CSU, GETPC());
     }
     /* if (PCXI.UL == 0) then trap(CTYP); */
-    if ((env->PCXI & MASK_PCXI_UL) == 0) {
-        /* CTYP trap */
-        cdc_increment(&psw); /* restore to the start of helper */
-        psw_write(env, psw);
-        raise_exception_sync_helper(env, TRAPC_CTX_MNG, TIN3_CTYP, GETPC());
-    }
+    if (tricore_feature(env, TRICORE_FEATURE_16)) {
+        if ((env->PCXI & MASK_PCXI_UL_1_6) == 0) {
+            /* CTYP trap */
+            cdc_increment(&psw); /* restore to the start of helper */
+            psw_write(env, psw);
+            raise_exception_sync_helper(env, TRAPC_CTX_MNG, TIN3_CTYP, GETPC());
+        }
+       }
+       else if (tricore_feature(env, TRICORE_FEATURE_13))
+   	{
+    	    if ((env->PCXI & MASK_PCXI_UL_1_3) == 0) {
+    	        /* CTYP trap */
+    	        cdc_increment(&psw); /* restore to the start of helper */
+    	        psw_write(env, psw);
+    	        raise_exception_sync_helper(env, TRAPC_CTX_MNG, TIN3_CTYP, GETPC());
+    	    }
+   	}
     /* PC = {A11 [31: 1], 1’b0}; */
     env->PC = env->gpr_a[11] & 0xfffffffe;
 
@@ -2561,18 +2594,32 @@ void helper_bisr(CPUTriCoreState *env, uint32_t const9)
     /* PCXI.PCPN = ICR.CCPN */
     env->PCXI = (env->PCXI & 0xffffff) +
                  ((env->ICR & MASK_ICR_CCPN) << 24);
-    /* PCXI.PIE  = ICR.IE */
-    env->PCXI = ((env->PCXI & ~MASK_PCXI_PIE_1_3) +
-                 ((env->ICR & MASK_ICR_IE_1_3) << 15));
-    /* PCXI.UL = 0 */
-    env->PCXI &= ~(MASK_PCXI_UL);
+    /* PCXI.PIE = ICR.IE; */
+    /* PCXI.UL = 0; */
+    if (tricore_feature(env, TRICORE_FEATURE_16)) {
+    	env->PCXI = ((env->PCXI & ~MASK_PCXI_PIE_1_6) +
+    			((env->ICR & MASK_ICR_IE_1_6) << 6));
+    	env->PCXI &= ~(MASK_PCXI_UL_1_6);
+    }
+    else if (tricore_feature(env, TRICORE_FEATURE_13))
+    {
+    	env->PCXI = ((env->PCXI & ~MASK_PCXI_PIE_1_3) +
+    			((env->ICR & MASK_ICR_IE_1_3) << 15));
+    	env->PCXI &= ~(MASK_PCXI_UL_1_3);
+    }
     /* PCXI[19: 0] = FCX[19: 0] */
     env->PCXI = (env->PCXI & 0xfff00000) + (env->FCX & 0xfffff);
     /* FXC[19: 0] = new_FCX[19: 0] */
     env->FCX = (env->FCX & 0xfff00000) + (new_FCX & 0xfffff);
     /* ICR.IE = 1 */
     env->ICR |= MASK_ICR_IE_1_3;
-
+    if (tricore_feature(env, TRICORE_FEATURE_16)) {
+    	env->ICR |= MASK_ICR_IE_1_6;
+    }
+    else if (tricore_feature(env, TRICORE_FEATURE_13))
+    {
+    	env->ICR |= MASK_ICR_IE_1_3;
+    }
     env->ICR |= const9; /* ICR.CCPN = const9[7: 0];*/
 
     if (tmp_FCX == env->LCX) {
@@ -2592,10 +2639,20 @@ void helper_rfe(CPUTriCoreState *env)
         raise_exception_sync_helper(env, TRAPC_CTX_MNG, TIN3_CSU, GETPC());
     }
     /* if (PCXI.UL == 0) then trap(CTYP); */
-    if ((env->PCXI & MASK_PCXI_UL) == 0) {
-        /* raise CTYP trap */
-        raise_exception_sync_helper(env, TRAPC_CTX_MNG, TIN3_CTYP, GETPC());
-    }
+    if (tricore_feature(env, TRICORE_FEATURE_16)) {
+    	if ((env->PCXI & MASK_PCXI_UL_1_6) == 0) {
+    	        /* raise CTYP trap */
+    	        raise_exception_sync_helper(env, TRAPC_CTX_MNG, TIN3_CTYP, GETPC());
+    	    }
+       }
+       else if (tricore_feature(env, TRICORE_FEATURE_13))
+   	{
+    	   if ((env->PCXI & MASK_PCXI_UL_1_3) == 0) {
+    	           /* raise CTYP trap */
+    	           raise_exception_sync_helper(env, TRAPC_CTX_MNG, TIN3_CTYP, GETPC());
+    	       }
+   	}
+
     /* if (!cdc_zero() AND PSW.CDE) then trap(NEST); */
     if (!cdc_zero(&(env->PSW)) && (env->PSW & MASK_PSW_CDE)) {
         /* raise NEST trap */
@@ -2603,11 +2660,26 @@ void helper_rfe(CPUTriCoreState *env)
     }
     env->PC = env->gpr_a[11] & ~0x1;
     /* ICR.IE = PCXI.PIE; */
-    env->ICR = (env->ICR & ~MASK_ICR_IE_1_3)
-            + ((env->PCXI & MASK_PCXI_PIE_1_3) >> 15);
+    if (tricore_feature(env, TRICORE_FEATURE_16)) {
+        env->PCXI = ((env->PCXI & ~MASK_PCXI_PIE_1_6) +
+                    ((env->ICR & MASK_ICR_IE_1_6) << 6));
+       }
+       else if (tricore_feature(env, TRICORE_FEATURE_13))
+   	{
+    	    env->PCXI = ((env->PCXI & ~MASK_PCXI_PIE_1_3) +
+    	                ((env->ICR & MASK_ICR_IE_1_3) << 15));
+   	}
     /* ICR.CCPN = PCXI.PCPN; */
+    if (tricore_feature(env, TRICORE_FEATURE_16)) {
     env->ICR = (env->ICR & ~MASK_ICR_CCPN) +
-               ((env->PCXI & MASK_PCXI_PCPN) >> 24);
+               ((env->PCXI & MASK_PCXI_PCPN_1_6) >> 22);
+    }
+    else if (tricore_feature(env, TRICORE_FEATURE_13))
+	{
+        env->ICR = (env->ICR & ~MASK_ICR_CCPN) +
+                   ((env->PCXI & MASK_PCXI_PCPN_1_3) >> 24);
+	}
+
     /*EA = {PCXI.PCXS, 6'b0, PCXI.PCXO, 6'b0};*/
     ea = ((env->PCXI & MASK_PCXI_PCXS) << 12) +
          ((env->PCXI & MASK_PCXI_PCXO) << 6);
@@ -2628,11 +2700,25 @@ void helper_rfm(CPUTriCoreState *env)
 {
     env->PC = (env->gpr_a[11] & ~0x1);
     /* ICR.IE = PCXI.PIE; */
-    env->ICR = (env->ICR & ~MASK_ICR_IE_1_3)
-            | ((env->PCXI & MASK_PCXI_PIE_1_3) >> 15);
+    if (tricore_feature(env, TRICORE_FEATURE_16)) {
+        env->PCXI = ((env->PCXI & ~MASK_PCXI_PIE_1_6) +
+                    ((env->ICR & MASK_ICR_IE_1_6) << 6));
+       }
+       else if (tricore_feature(env, TRICORE_FEATURE_13))
+   	{
+    	    env->PCXI = ((env->PCXI & ~MASK_PCXI_PIE_1_3) +
+    	                ((env->ICR & MASK_ICR_IE_1_3) << 15));
+   	}
     /* ICR.CCPN = PCXI.PCPN; */
-    env->ICR = (env->ICR & ~MASK_ICR_CCPN) |
-               ((env->PCXI & MASK_PCXI_PCPN) >> 24);
+    if (tricore_feature(env, TRICORE_FEATURE_16)) {
+        env->ICR = (env->ICR & ~MASK_ICR_CCPN) |
+                   ((env->PCXI & MASK_PCXI_PCPN_1_6) >> 22);
+    }
+    else if (tricore_feature(env, TRICORE_FEATURE_13))
+	{
+        env->ICR = (env->ICR & ~MASK_ICR_CCPN) |
+                   ((env->PCXI & MASK_PCXI_PCPN_1_3) >> 24);
+	}
     /* {PCXI, PSW, A[10], A[11]} = M(DCX, 4 * word); */
     env->PCXI = cpu_ldl_data(env, env->DCX);
     psw_write(env, cpu_ldl_data(env, env->DCX+4));
@@ -2694,10 +2780,18 @@ void helper_svlcx(CPUTriCoreState *env)
     env->PCXI = (env->PCXI & 0xffffff) +
                 ((env->ICR & MASK_ICR_CCPN) << 24);
     /* PCXI.PIE = ICR.IE; */
-    env->PCXI = ((env->PCXI & ~MASK_PCXI_PIE_1_3) +
-                ((env->ICR & MASK_ICR_IE_1_3) << 15));
     /* PCXI.UL = 0; */
-    env->PCXI &= ~MASK_PCXI_UL;
+    if (tricore_feature(env, TRICORE_FEATURE_16)) {
+        env->PCXI = ((env->PCXI & ~MASK_PCXI_PIE_1_6) +
+                    ((env->ICR & MASK_ICR_IE_1_6) << 6));
+	    env->PCXI &= ~MASK_PCXI_UL_1_6;
+       }
+       else if (tricore_feature(env, TRICORE_FEATURE_13))
+   	{
+    	    env->PCXI = ((env->PCXI & ~MASK_PCXI_PIE_1_3) +
+    	                ((env->ICR & MASK_ICR_IE_1_3) << 15));
+    	    env->PCXI &= ~MASK_PCXI_UL_1_3;
+   	}
 
     /* PCXI[19: 0] = FCX[19: 0]; */
     env->PCXI = (env->PCXI & 0xfff00000) + (env->FCX & 0xfffff);
@@ -2737,10 +2831,18 @@ void helper_svucx(CPUTriCoreState *env)
     env->PCXI = (env->PCXI & 0xffffff) +
                 ((env->ICR & MASK_ICR_CCPN) << 24);
     /* PCXI.PIE = ICR.IE; */
-    env->PCXI = ((env->PCXI & ~MASK_PCXI_PIE_1_3) +
-                ((env->ICR & MASK_ICR_IE_1_3) << 15));
     /* PCXI.UL = 1; */
-    env->PCXI |= MASK_PCXI_UL;
+    if (tricore_feature(env, TRICORE_FEATURE_16)) {
+        env->PCXI = ((env->PCXI & ~MASK_PCXI_PIE_1_6) +
+                    ((env->ICR & MASK_ICR_IE_1_6) << 6));
+	    env->PCXI |= MASK_PCXI_UL_1_6;
+       }
+       else if (tricore_feature(env, TRICORE_FEATURE_13))
+   	{
+    	    env->PCXI = ((env->PCXI & ~MASK_PCXI_PIE_1_3) +
+    	                ((env->ICR & MASK_ICR_IE_1_3) << 15));
+    	    env->PCXI |= MASK_PCXI_UL_1_3;
+   	}
 
     /* PCXI[19: 0] = FCX[19: 0]; */
     env->PCXI = (env->PCXI & 0xfff00000) + (env->FCX & 0xfffff);
@@ -2764,10 +2866,21 @@ void helper_rslcx(CPUTriCoreState *env)
         raise_exception_sync_helper(env, TRAPC_CTX_MNG, TIN3_CSU, GETPC());
     }
     /* if (PCXI.UL == 1) then trap(CTYP); */
-    if ((env->PCXI & MASK_PCXI_UL) != 0) {
-        /* CTYP trap */
-        raise_exception_sync_helper(env, TRAPC_CTX_MNG, TIN3_CTYP, GETPC());
+
+    if (tricore_feature(env, TRICORE_FEATURE_16)) {
+    	if ((env->PCXI & MASK_PCXI_UL_1_6) == 0) {
+    		/* raise CTYP trap */
+    		raise_exception_sync_helper(env, TRAPC_CTX_MNG, TIN3_CTYP, GETPC());
+    	}
     }
+    else if (tricore_feature(env, TRICORE_FEATURE_13))
+    {
+    	if ((env->PCXI & MASK_PCXI_UL_1_3) == 0) {
+    		/* raise CTYP trap */
+    		raise_exception_sync_helper(env, TRAPC_CTX_MNG, TIN3_CTYP, GETPC());
+    	}
+    }
+
     /* EA = {PCXI.PCXS, 6'b0, PCXI.PCXO, 6'b0}; */
     ea = ((env->PCXI & MASK_PCXI_PCXS) << 12) +
          ((env->PCXI & MASK_PCXI_PCXO) << 6);
