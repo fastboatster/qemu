@@ -30,6 +30,8 @@ typedef struct tricore_def_t tricore_def_t;
 
 typedef struct CPUTriCoreState CPUTriCoreState;
 struct CPUTriCoreState {
+	uint32_t semihost_encoding;
+	uint32_t semihost;
     /* GPR Register */
     uint32_t gpr_a[16];
     uint32_t gpr_d[16];
@@ -211,10 +213,12 @@ hwaddr tricore_cpu_get_phys_page_debug(CPUState *cpu, vaddr addr);
 void tricore_cpu_dump_state(CPUState *cpu, FILE *f, int flags);
 
 
-#define MASK_PCXI_PCPN 0xff000000
+#define MASK_PCXI_PCPN_1_3 0xff000000
+#define MASK_PCXI_PCPN_1_6 0x3fc00000
 #define MASK_PCXI_PIE_1_3  0x00800000
 #define MASK_PCXI_PIE_1_6  0x00200000
-#define MASK_PCXI_UL   0x00400000
+#define MASK_PCXI_UL_1_3 0x00400000
+#define MASK_PCXI_UL_1_6 0x00100000
 #define MASK_PCXI_PCXS 0x000f0000
 #define MASK_PCXI_PCXO 0x0000ffff
 
@@ -393,5 +397,18 @@ static inline void cpu_get_tb_cpu_state(CPUTriCoreState *env, target_ulong *pc,
 bool tricore_cpu_tlb_fill(CPUState *cs, vaddr address, int size,
                           MMUAccessType access_type, int mmu_idx,
                           bool probe, uintptr_t retaddr);
+void tricore_cpu_do_interrupt(CPUState *cpu);
+bool tricore_cpu_exec_interrupt(CPUState *cpu, int int_req);
+
+#define INSNOPCODE_DEBUG16 0xA000
+#define GCC_VIRTIO_MARKERPCM2 0x6f69
+#define GCC_VIRTIO_MARKERPCM4 0x765f
+#define GCC_VIRTIO_MARKEREXITPCM2 0x0E60
+#define GCC_VIRTIO_MARKEREXITPCM2_MASK 0x0FFF
+#define EXCP_EXIT 0x1000
+#define EXCP_SEMIHOST 0x1001
+#define __VIRTUAL_IO__
+void tricore_vio_init (void);
+int do_tricore_semihosting (CPUState *cs);
 
 #endif /* TRICORE_CPU_H */
