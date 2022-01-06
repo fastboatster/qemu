@@ -21,6 +21,7 @@
 #include "qapi/error.h"
 #include "cpu.h"
 #include "exec/exec-all.h"
+#include "exec/gdbstub.h"
 #include "qemu/error-report.h"
 
 static inline void set_feature(CPUTriCoreState *env, int feature)
@@ -30,7 +31,8 @@ static inline void set_feature(CPUTriCoreState *env, int feature)
 
 static gchar *tricore_gdb_arch_name(CPUState *cs)
 {
-    return g_strdup("tricore");
+	//TODO depending on board
+	return g_strdup("TriCore:V1_6_1");
 }
 
 static void tricore_cpu_set_pc(CPUState *cs, vaddr value)
@@ -142,6 +144,13 @@ static void tc27x_initfn(Object *obj)
     set_feature(&cpu->env, TRICORE_FEATURE_161);
 }
 
+static void tc161_initfn(Object *obj)
+{
+    TriCoreCPU *cpu = TRICORE_CPU(obj);
+
+    set_feature(&cpu->env, TRICORE_FEATURE_161);
+}
+
 #include "hw/core/sysemu-cpu-ops.h"
 
 static const struct SysemuCPUOps tricore_sysemu_ops = {
@@ -154,7 +163,36 @@ static const struct TCGCPUOps tricore_tcg_ops = {
     .initialize = tricore_tcg_init,
     .synchronize_from_tb = tricore_cpu_synchronize_from_tb,
     .tlb_fill = tricore_cpu_tlb_fill,
+    .do_interrupt = tricore_cpu_do_interrupt,
 };
+
+void tricore_cpu_do_interrupt(CPUState *cs)
+{
+	  TriCoreCPU *cpu = TRICORE_CPU(cs);
+	  CPUTriCoreState *env = &cpu->env;
+		switch (cs->exception_index)
+		{
+		case EXCP_EXIT:
+		{
+			uint32_t exit_arg;
+			qemu_log_mask(LOG_GUEST_ERROR,"tricore_cpu_do_interrupt EXCP_EXIT %x %x\n",env->PC,env->gpr_a[14]);
+			if (env->gpr_a[14]==0x900d) exit_arg=0; else exit_arg=env->gpr_a[14];
+			gdb_exit(exit_arg);
+			exit(exit_arg);
+		}
+		case EXCP_SEMIHOST:
+		{
+			qemu_log_mask(LOG_GUEST_ERROR,"tricore_cpu_do_interrupt EXCP_SEMIHOST %x %d \n",env->PC,env->gpr_d[12]);
+			qemu_log_mask(LOG_GUEST_ERROR,"a4 %x\n",env->gpr_a[4]);
+			qemu_log_mask(LOG_GUEST_ERROR,"d4 %x\n",env->gpr_d[4]);
+			qemu_log_mask(LOG_GUEST_ERROR,"d5 %x\n",env->gpr_d[5]);
+			qemu_log_mask(LOG_GUEST_ERROR,"d12 %x\n",env->gpr_d[12]);
+			env->PC += 2;
+			cs->exception_index=0;
+   		    do_tricore_semihosting (cs);
+		}
+		}
+}
 
 static void tricore_cpu_class_init(ObjectClass *c, void *data)
 {
@@ -168,9 +206,9 @@ static void tricore_cpu_class_init(ObjectClass *c, void *data)
     device_class_set_parent_reset(dc, tricore_cpu_reset, &mcc->parent_reset);
     cc->class_by_name = tricore_cpu_class_by_name;
     cc->has_work = tricore_cpu_has_work;
-
     cc->gdb_read_register = tricore_cpu_gdb_read_register;
     cc->gdb_write_register = tricore_cpu_gdb_write_register;
+    cc->gdb_core_xml_file = "tricore-core.xml";
     cc->gdb_num_core_regs = 44;
     cc->gdb_arch_name = tricore_gdb_arch_name;
 
@@ -178,6 +216,7 @@ static void tricore_cpu_class_init(ObjectClass *c, void *data)
     cc->set_pc = tricore_cpu_set_pc;
     cc->sysemu_ops = &tricore_sysemu_ops;
     cc->tcg_ops = &tricore_tcg_ops;
+    tricore_vio_init();
 }
 
 #define DEFINE_TRICORE_CPU_TYPE(cpu_model, initfn) \
@@ -200,6 +239,7 @@ static const TypeInfo tricore_cpu_type_infos[] = {
     DEFINE_TRICORE_CPU_TYPE("tc1796", tc1796_initfn),
     DEFINE_TRICORE_CPU_TYPE("tc1797", tc1797_initfn),
     DEFINE_TRICORE_CPU_TYPE("tc27x", tc27x_initfn),
+    DEFINE_TRICORE_CPU_TYPE("tc161", tc161_initfn),
 };
 
 DEFINE_TYPES(tricore_cpu_type_infos)
