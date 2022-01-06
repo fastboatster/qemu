@@ -25,6 +25,8 @@
 #include "tcg/tcg-op.h"
 #include "exec/cpu_ldst.h"
 #include "qemu/qemu-print.h"
+#include "exec/gdbstub.h"
+#include "semihosting/semihost.h"
 
 #include "exec/helper-proto.h"
 #include "exec/helper-gen.h"
@@ -3225,6 +3227,14 @@ static inline void gen_save_pc(target_ulong pc)
     tcg_gen_movi_tl(cpu_PC, pc);
 }
 
+static void generate_qemu_excp(DisasContext *ctx, int excp)
+{
+    TCGv_i32 tmp = tcg_const_i32(excp);
+    gen_helper_qemu_excp(cpu_env, tmp);
+    ctx->base.is_jmp = DISAS_NORETURN;
+    tcg_temp_free(tmp);
+}
+
 static void gen_goto_tb(DisasContext *ctx, int n, target_ulong dest)
 {
     if (translator_use_goto_tb(&ctx->base, dest)) {
@@ -3411,6 +3421,7 @@ static void gen_compute_branch(DisasContext *ctx, uint32_t opc, int r1,
     case OPC2_16_SR_RET:
         gen_helper_ret(cpu_env);
         tcg_gen_exit_tb(NULL, 0);
+        ctx->base.is_jmp = DISAS_NORETURN;
         break;
 /* B-format */
     case OPC1_32_B_CALLA:
@@ -3878,7 +3889,7 @@ static void decode_sro_opc(DisasContext *ctx, int op1)
         gen_offset_ld(ctx, cpu_gpr_d[15], cpu_gpr_a[r2], address, MO_UB);
         break;
     case OPC1_16_SRO_LD_H:
-        gen_offset_ld(ctx, cpu_gpr_d[15], cpu_gpr_a[r2], address, MO_LESW);
+        gen_offset_ld(ctx, cpu_gpr_d[15], cpu_gpr_a[r2], address * 2, MO_LESW);
         break;
     case OPC1_16_SRO_LD_W:
         gen_offset_ld(ctx, cpu_gpr_d[15], cpu_gpr_a[r2], address * 4, MO_LESL);
@@ -5794,19 +5805,19 @@ static void decode_rcrw_insert(DisasContext *ctx)
 
     switch (op2) {
     case OPC2_32_RCRW_IMASK:
-        tcg_gen_andi_tl(temp, cpu_gpr_d[r4], 0x1f);
+        tcg_gen_andi_tl(temp, cpu_gpr_d[r3], 0x1f);
         tcg_gen_movi_tl(temp2, (1 << width) - 1);
-        tcg_gen_shl_tl(cpu_gpr_d[r3 + 1], temp2, temp);
+        tcg_gen_shl_tl(cpu_gpr_d[r4 + 1], temp2, temp);
         tcg_gen_movi_tl(temp2, const4);
-        tcg_gen_shl_tl(cpu_gpr_d[r3], temp2, temp);
+        tcg_gen_shl_tl(cpu_gpr_d[r4], temp2, temp);
         break;
     case OPC2_32_RCRW_INSERT:
         temp3 = tcg_temp_new();
 
         tcg_gen_movi_tl(temp, width);
         tcg_gen_movi_tl(temp2, const4);
-        tcg_gen_andi_tl(temp3, cpu_gpr_d[r4], 0x1f);
-        gen_insert(cpu_gpr_d[r3], cpu_gpr_d[r1], temp2, temp, temp3);
+        tcg_gen_andi_tl(temp3, cpu_gpr_d[r3], 0x1f);
+        gen_insert(cpu_gpr_d[r4], cpu_gpr_d[r1], temp2, temp, temp3);
 
         tcg_temp_free(temp3);
         break;
@@ -8357,7 +8368,13 @@ static void decode_sys_interrupts(DisasContext *ctx)
         /* raise EXCP_DEBUG */
         break;
     case OPC2_32_SYS_DISABLE:
-        tcg_gen_andi_tl(cpu_ICR, cpu_ICR, ~MASK_ICR_IE_1_3);
+        if (has_feature(ctx, TRICORE_FEATURE_16)) {
+        	tcg_gen_andi_tl(cpu_ICR, cpu_ICR, ~MASK_ICR_IE_1_6);
+        }
+        else if (has_feature(ctx, TRICORE_FEATURE_13))
+        {
+        	tcg_gen_andi_tl(cpu_ICR, cpu_ICR, ~MASK_ICR_IE_1_3);
+        }
         break;
     case OPC2_32_SYS_DSYNC:
         break;
@@ -8823,9 +8840,65 @@ static void tricore_tr_translate_insn(DisasContextBase *dcbase, CPUState *cpu)
     insn_lo = cpu_lduw_code(env, ctx->base.pc_next);
     is_16bit = tricore_insn_is_16bit(insn_lo);
     if (is_16bit) {
-        ctx->opcode = insn_lo;
-        ctx->pc_succ_insn = ctx->base.pc_next + 2;
-        decode_16Bit_opc(ctx);
+    	ctx->opcode = insn_lo;
+    	ctx->pc_succ_insn = ctx->base.pc_next + 2;
+    	decode_16Bit_opc(ctx);
+    	if (insn_lo==0xA000)
+    	{
+    		//TODO has to be done
+    		//if the debug is the first insn of the context everything is
+    		//if a later one (no singlestep mode), terminate the disasscontext
+    		//observed in exit where A14 is update in the prev. instruction
+    		//in virtio this should not be the case becaue is always jumped
+    		//tcg_gen_movi_tl(cpu_monitor, 0xAAAA);
+
+    		/* It is debug16 instruction, the following cases are possible (maybe to be extended)
+             1) if a debugger is not connected take debug as nop
+             2) if a debugger is connected do a debug exception, virtio/semihosting can be done by client (hook or remoteprotocoll)
+             3) if a debugger is connected handle virtio/semihsoting and generate debug exceptions for other cases
+             4) if a debugger is not connected, do virtio/semihosting and exit in other cases
+
+    		 */
+    		uint32_t markerpcm2;
+    		uint32_t markerpcm4;
+    		markerpcm2=cpu_lduw_code(env, ctx->base.pc_next-2);
+    		markerpcm4=cpu_lduw_code(env, ctx->base.pc_next-4);
+
+    		qemu_log_mask(LOG_GUEST_ERROR,"debug16 gdb=%d semihost=%d pc=%8.8x mp2m=%4.4x mp4m=%4.4x\n",semihosting_enabled(),gdb_state(),ctx->base.pc_next,markerpcm2,markerpcm4);
+    		//if the debug16 insn has an exit marker we push in each case an exit exception
+    		if ((markerpcm2 & GCC_VIRTIO_MARKEREXITPCM2_MASK) ==GCC_VIRTIO_MARKEREXITPCM2)
+    		{
+    			//Register A14 contains the return value
+    			//0x900d is considered as 0, else pass as exit argument
+    			//exit markers in trap functions have on identifiers and can generate additional infos
+    			qemu_log_mask(LOG_GUEST_ERROR,"Exit Marker\n");
+    			generate_qemu_excp(ctx, EXCP_EXIT);
+    			ctx->base.is_jmp = DISAS_TOO_MANY;
+    		}
+    		else if (gdb_state())
+    		{
+    			qemu_log_mask(LOG_GUEST_ERROR,"Debug with GDB, no semi\n");
+    			generate_qemu_excp(ctx, EXCP_DEBUG);
+    			ctx->base.is_jmp = DISAS_TOO_MANY;
+    		}
+    		else if (semihosting_enabled())
+    		{
+    			qemu_log_mask(LOG_GUEST_ERROR,"Debug no GDB but with semi\n");
+    			if ((markerpcm2==GCC_VIRTIO_MARKERPCM2) && (markerpcm4==GCC_VIRTIO_MARKERPCM4))
+    			{
+    				//Register D12 contains the id
+    				cpu->halted = 1;
+    				cpu->exception_index = EXCP_SEMIHOST;
+    				cpu_loop_exit(cpu);
+    				ctx->base.is_jmp = DISAS_TOO_MANY;
+    			}
+    		}
+    		else
+    		{
+    			qemu_log_mask(LOG_GUEST_ERROR,"Debug as nop\n");
+    			//do nothing just take it as nop
+    		}
+    	}
     } else {
         uint32_t insn_hi = cpu_lduw_code(env, ctx->base.pc_next + 2);
         ctx->opcode = insn_hi << 16 | insn_lo;
@@ -8899,6 +8972,7 @@ void cpu_state_reset(CPUTriCoreState *env)
 {
     /* Reset Regs to Default Value */
     env->PSW = 0xb80;
+    env->semihost=0;
     fpu_set_state(env);
 }
 
