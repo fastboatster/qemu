@@ -1847,6 +1847,7 @@ disassemblers = {
   's390' : ['CONFIG_S390_DIS'],
   'sh4' : ['CONFIG_SH4_DIS'],
   'sparc' : ['CONFIG_SPARC_DIS'],
+  'tricore' : ['CONFIG_TRICORE_DIS'],
   'xtensa' : ['CONFIG_XTENSA_DIS'],
 }
 if link_language == 'cpp'
