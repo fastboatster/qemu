@@ -430,7 +430,7 @@ enum {
     OPCM_32_ABS_STOREB_H                             = 0x25,
     OPC1_32_ABS_STOREQ                               = 0x65,
     OPC1_32_ABS_LD_Q                                 = 0x45,
-    OPC1_32_ABS_LEA                                  = 0xc5,
+    OPCM_32_ABS_LEALHA                               = 0xc5,  /*LHA only >=TC162 */
 /* ABSB Format */
     OPC1_32_ABSB_ST_T                                = 0xd5,
 /* B Format */
@@ -586,6 +586,11 @@ enum {
     OPC2_32_ABS_ST_D                             = 0x01,
     OPC2_32_ABS_ST_DA                            = 0x03,
     OPC2_32_ABS_ST_W                             = 0x00,
+};
+/* OPCM_32_ABS_LEALHA            */
+enum {
+    OPC2_32_ABS_LEA                              = 0x00,
+    OPC2_32_ABS_LHA                              = 0x01,  /* >=TC162 */
 };
 /* OPCM_32_ABS_STOREB_H */
 enum {
@@ -773,12 +778,12 @@ enum {
     OPC2_32_BO_SWAP_W_SHORTOFF                   = 0x20,
     OPC2_32_BO_SWAP_W_POSTINC                    = 0x00,
     OPC2_32_BO_SWAP_W_PREINC                     = 0x10,
-    OPC2_32_BO_CMPSWAP_W_SHORTOFF                = 0x23,
-    OPC2_32_BO_CMPSWAP_W_POSTINC                 = 0x03,
-    OPC2_32_BO_CMPSWAP_W_PREINC                  = 0x13,
-    OPC2_32_BO_SWAPMSK_W_SHORTOFF                = 0x22,
-    OPC2_32_BO_SWAPMSK_W_POSTINC                 = 0x02,
-    OPC2_32_BO_SWAPMSK_W_PREINC                  = 0x12,
+    OPC2_32_BO_CMPSWAP_W_SHORTOFF                = 0x23, /* >=TC161 */
+    OPC2_32_BO_CMPSWAP_W_POSTINC                 = 0x03, /* >=TC161 */
+    OPC2_32_BO_CMPSWAP_W_PREINC                  = 0x13, /* >=TC161 */
+    OPC2_32_BO_SWAPMSK_W_SHORTOFF                = 0x22, /* >=TC161 */
+    OPC2_32_BO_SWAPMSK_W_POSTINC                 = 0x02, /* >=TC161 */
+    OPC2_32_BO_SWAPMSK_W_PREINC                  = 0x12, /* >=TC161 */
 };
 /*OPCM_32_BO_ADDRMODE_LDMST_BITREVERSE_CIRCULAR  */
 enum {
@@ -786,10 +791,10 @@ enum {
     OPC2_32_BO_LDMST_CIRC                        = 0x11,
     OPC2_32_BO_SWAP_W_BR                         = 0x00,
     OPC2_32_BO_SWAP_W_CIRC                       = 0x10,
-    OPC2_32_BO_CMPSWAP_W_BR                      = 0x03,
-    OPC2_32_BO_CMPSWAP_W_CIRC                    = 0x13,
-    OPC2_32_BO_SWAPMSK_W_BR                      = 0x02,
-    OPC2_32_BO_SWAPMSK_W_CIRC                    = 0x12,
+    OPC2_32_BO_CMPSWAP_W_BR                      = 0x03, /* >=TC161 */
+    OPC2_32_BO_CMPSWAP_W_CIRC                    = 0x13, /* >=TC161 */
+    OPC2_32_BO_SWAPMSK_W_BR                      = 0x02, /* >=TC161 */
+    OPC2_32_BO_SWAPMSK_W_CIRC                    = 0x12, /* >=TC161 */
 };
 /*
  * BRC Format
@@ -878,6 +883,7 @@ enum {
     OPC2_32_RC_SHAS                              = 0x02,
     OPC2_32_RC_XNOR                              = 0x0d,
     OPC2_32_RC_XOR                               = 0x0c,
+    OPC2_32_RC_SHUFFLE                           = 0x07,  /* >=TC162 */
 };
 /* OPCM_32_RC_ACCUMULATOR                           */
 enum {
@@ -1132,7 +1138,10 @@ enum {
     OPC2_32_RR_DVINIT_U                          = 0x0a,
     OPC2_32_RR_PARITY                            = 0x02,
     OPC2_32_RR_UNPACK                            = 0x08,
-    OPC2_32_RR_CRC32                             = 0x03,
+    OPC2_32_RR_CRC32                             = 0x03,  /* >=TC162 renamed in crc32bw */
+    OPC2_32_RR_CRC32BW                           = 0x03,  /* >=TC162 renamed in crc32bw */
+	OPC2_32_RR_CRC32B                            = 0x06,  /* >=TC162 */
+    OPC2_32_RR_CRC32LW                           = 0x07,  /* >=TC162 */
     OPC2_32_RR_DIV                               = 0x20,
     OPC2_32_RR_DIV_U                             = 0x21,
     OPC2_32_RR_MUL_F                             = 0x04,
@@ -1140,15 +1149,18 @@ enum {
     OPC2_32_RR_FTOI                              = 0x10,
     OPC2_32_RR_ITOF                              = 0x14,
     OPC2_32_RR_CMP_F                             = 0x00,
-    OPC2_32_RR_FTOIZ                             = 0x13,
+    OPC2_32_RR_FTOIZ                             = 0x13,  /* >=TC131 */
     OPC2_32_RR_FTOQ31                            = 0x11,
-    OPC2_32_RR_FTOQ31Z                           = 0x18,
+    OPC2_32_RR_FTOQ31Z                           = 0x18,  /* >=TC131 */
     OPC2_32_RR_FTOU                              = 0x12,
-    OPC2_32_RR_FTOUZ                             = 0x17,
+    OPC2_32_RR_FTOUZ                             = 0x17,  /* >=TC131 */
     OPC2_32_RR_Q31TOF                            = 0x15,
     OPC2_32_RR_QSEED_F                           = 0x19,
     OPC2_32_RR_UPDFL                             = 0x0c,
     OPC2_32_RR_UTOF                              = 0x16,
+    OPC2_32_RR_FTOHP                             = 0x25, /* >=TC162 */
+    OPC2_32_RR_HPTOF                             = 0x24, /* >=TC162 */
+    OPC2_32_RR_POPCNTW                           = 0x22, /* >=TC162 */
 };
 /* OPCM_32_RR_IDIRECT                               */
 enum {
@@ -1236,6 +1248,7 @@ enum {
     OPC2_32_RRR_SUB_F                            = 0x03,
     OPC2_32_RRR_MADD_F                           = 0x06,
     OPC2_32_RRR_MSUB_F                           = 0x07,
+    OPC2_32_RRR_CRCN                             = 0x01,  /*>=TC162*/
 };
 /*
  * RRR1 Format
@@ -1465,6 +1478,7 @@ enum {
     OPC2_32_SYS_RFM                              = 0x05,
     OPC2_32_SYS_RSLCX                            = 0x09,
     OPC2_32_SYS_SVLCX                            = 0x08,
+    OPC2_32_SYS_WAIT                             = 0x16,  /* >=TC161 */
     OPC2_32_SYS_TRAPSV                           = 0x15,
     OPC2_32_SYS_TRAPV                            = 0x14,
     OPC2_32_SYS_RESTORE                          = 0x0e,
