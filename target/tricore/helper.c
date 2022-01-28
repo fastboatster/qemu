@@ -121,7 +121,17 @@ void tricore_cpu_list(void)
 
 void fpu_set_state(CPUTriCoreState *env)
 {
-    set_float_rounding_mode(env->PSW & MASK_PSW_FPU_RM, &env->fp_status);
+uint32_t rounding_mode_host;
+switch ((env->PSW & MASK_PSW_FPU_RM)>>24)
+	{
+	case 0x0: rounding_mode_host=float_round_nearest_even; break;
+	case 0x1: rounding_mode_host=float_round_up; break;
+	case 0x2: rounding_mode_host=float_round_down; break;
+	case 0x3: rounding_mode_host=float_round_to_zero; break;
+	default: break;
+	}
+
+	set_float_rounding_mode(rounding_mode_host, &env->fp_status);
     set_flush_inputs_to_zero(1, &env->fp_status);
     set_flush_to_zero(1, &env->fp_status);
     set_default_nan_mode(1, &env->fp_status);
@@ -130,24 +140,30 @@ void fpu_set_state(CPUTriCoreState *env)
 uint32_t psw_read(CPUTriCoreState *env)
 {
     /* clear all USB bits */
-    env->PSW &= 0x6ffffff;
+    env->PSW &= 0x00ffffff;
     /* now set them from the cache */
-    env->PSW |= ((env->PSW_USB_C != 0) << 31);
-    env->PSW |= ((env->PSW_USB_V   & (1 << 31))  >> 1);
-    env->PSW |= ((env->PSW_USB_SV  & (1 << 31))  >> 2);
-    env->PSW |= ((env->PSW_USB_AV  & (1 << 31))  >> 3);
-    env->PSW |= ((env->PSW_USB_SAV & (1 << 31))  >> 4);
+    env->PSW |= ((env->PSW_USB_BIT31 != 0) << 31);
+    env->PSW |= ((env->PSW_USB_BIT30  & (1 << 31))  >> 1);
+    env->PSW |= ((env->PSW_USB_BIT29  & (1 << 31))  >> 2);
+    env->PSW |= ((env->PSW_USB_BIT28  & (1 << 31))  >> 3);
+    env->PSW |= ((env->PSW_USB_BIT27  & (1 << 31))  >> 4);
+    env->PSW |= ((env->PSW_USB_BIT26  & (1 << 31))  >> 5);
+    env->PSW |= ((env->PSW_USB_BIT25  & (1 << 31))  >> 6);
+    env->PSW |= ((env->PSW_USB_BIT24  & (1 << 31))  >> 7);
 
     return env->PSW;
 }
 
 void psw_write(CPUTriCoreState *env, uint32_t val)
 {
-    env->PSW_USB_C = (val & MASK_USB_C);
-    env->PSW_USB_V = (val & MASK_USB_V) << 1;
-    env->PSW_USB_SV = (val & MASK_USB_SV) << 2;
-    env->PSW_USB_AV = (val & MASK_USB_AV) << 3;
-    env->PSW_USB_SAV = (val & MASK_USB_SAV) << 4;
+    env->PSW_USB_BIT31 = (val & MASK_USB_BIT31);
+    env->PSW_USB_BIT30 = (val & MASK_USB_BIT30) << 1;
+    env->PSW_USB_BIT29 = (val & MASK_USB_BIT30) << 2;
+    env->PSW_USB_BIT28 = (val & MASK_USB_BIT30) << 3;
+    env->PSW_USB_BIT27 = (val & MASK_USB_BIT30) << 4;
+    env->PSW_USB_BIT26 = (val & MASK_USB_BIT30) << 5;
+    env->PSW_USB_BIT25 = (val & MASK_USB_BIT30) << 6;
+    env->PSW_USB_BIT24 = (val & MASK_USB_BIT30) << 7;
     env->PSW = val;
 
     fpu_set_state(env);
