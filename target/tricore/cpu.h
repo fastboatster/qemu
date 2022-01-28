@@ -44,11 +44,14 @@ struct CPUTriCoreState {
 
     /* PSW flag cache for faster execution
     */
-    uint32_t PSW_USB_C;
-    uint32_t PSW_USB_V;   /* Only if bit 31 set, then flag is set  */
-    uint32_t PSW_USB_SV;  /* Only if bit 31 set, then flag is set  */
-    uint32_t PSW_USB_AV;  /* Only if bit 31 set, then flag is set. */
-    uint32_t PSW_USB_SAV; /* Only if bit 31 set, then flag is set. */
+    uint32_t PSW_USB_BIT31;
+    uint32_t PSW_USB_BIT30;   /* Only if bit 31 set, then flag is set  */
+    uint32_t PSW_USB_BIT29;  /* Only if bit 31 set, then flag is set  */
+    uint32_t PSW_USB_BIT28;  /* Only if bit 31 set, then flag is set. */
+    uint32_t PSW_USB_BIT27; /* Only if bit 31 set, then flag is set. */
+    uint32_t PSW_USB_BIT26; /* Only if bit 31 set, then flag is set. */
+    uint32_t PSW_USB_BIT25; /* Only if bit 31 set, then flag is set. */
+    uint32_t PSW_USB_BIT24; /* Only if bit 31 set, then flag is set. */
 
     uint32_t PC;
     uint32_t SYSCON;
@@ -211,23 +214,48 @@ struct TriCoreCPU {
 
 hwaddr tricore_cpu_get_phys_page_debug(CPUState *cpu, vaddr addr);
 void tricore_cpu_dump_state(CPUState *cpu, FILE *f, int flags);
+void  tricore_cpu_do_unaligned_access(CPUState *cs, vaddr addr,
+                                    MMUAccessType access_type, int mmu_idx,
+                                    uintptr_t retaddr) QEMU_NORETURN;
 
 
-#define MASK_PCXI_PCPN_1_3 0xff000000
-#define MASK_PCXI_PCPN_1_6 0x3fc00000
-#define MASK_PCXI_PIE_1_3  0x00800000
-#define MASK_PCXI_PIE_1_6  0x00200000
-#define MASK_PCXI_UL_1_3 0x00400000
-#define MASK_PCXI_UL_1_6 0x00100000
+#define MASK_PCXI_PCPN_TC13 	0xff000000
+#define MASK_PCXI_PCPN_TC131 	0xff000000
+#define MASK_PCXI_PCPN_TC16 	0xff000000
+#define MASK_PCXI_PCPN_TC161 	0x3fc00000
+#define MASK_PCXI_PCPN_TC162 	0x3fc00000
+#define MASK_PCXI_PIE_TC13		0x00800000
+#define MASK_PCXI_PIE_TC131		0x00800000
+#define MASK_PCXI_PIE_TC16		0x00800000
+#define MASK_PCXI_PIE_TC161		0x00200000
+#define MASK_PCXI_PIE_TC162		0x00200000
+#define MASK_PCXI_UL_TC13		0x00400000
+#define MASK_PCXI_UL_TC131		0x00400000
+#define MASK_PCXI_UL_TC16		0x00400000
+#define MASK_PCXI_UL_TC161		0x00100000
+#define MASK_PCXI_UL_TC162		0x00100000
+
 #define MASK_PCXI_PCXS 0x000f0000
 #define MASK_PCXI_PCXO 0x0000ffff
 
+#define MASK_ICR_IE_TC13   0x00000100
+#define MASK_ICR_IE_TC131  0x00000100
+#define MASK_ICR_IE_TC16   0x00008000
+#define MASK_ICR_IE_TC161  0x00008000
+#define MASK_ICR_IE_TC162  0x00008000
+#define MASK_ICR_PIPN 0x00ff0000
+#define MASK_ICR_CCPN 0x000000ff
+
+
 #define MASK_PSW_USB 0xff000000
-#define MASK_USB_C   0x80000000
-#define MASK_USB_V   0x40000000
-#define MASK_USB_SV  0x20000000
-#define MASK_USB_AV  0x10000000
-#define MASK_USB_SAV 0x08000000
+#define MASK_USB_BIT31 0x80000000
+#define MASK_USB_BIT30 0x40000000
+#define MASK_USB_BIT29 0x20000000
+#define MASK_USB_BIT28 0x10000000
+#define MASK_USB_BIT27 0x08000000
+#define MASK_USB_BIT26 0x04000000
+#define MASK_USB_BIT25 0x02000000
+#define MASK_USB_BIT24 0x01000000
 #define MASK_PSW_PRS 0x00003000
 #define MASK_PSW_IO  0x00000c00
 #define MASK_PSW_IS  0x00000200
@@ -243,10 +271,6 @@ void tricore_cpu_dump_state(CPUState *cpu, FILE *f, int flags);
 #define MASK_CPUID_MOD_32B 0x0000ff00
 #define MASK_CPUID_REV     0x000000ff
 
-#define MASK_ICR_PIPN 0x00ff0000
-#define MASK_ICR_IE_1_3   0x00000100
-#define MASK_ICR_IE_1_6   0x00008000
-#define MASK_ICR_CCPN 0x000000ff
 
 #define MASK_FCX_FCXS 0x000f0000
 #define MASK_FCX_FCXO 0x0000ffff
@@ -267,16 +291,81 @@ void tricore_cpu_dump_state(CPUState *cpu, FILE *f, int flags);
 #define TRICORE_HFLAG_SM      0x00000 /* kernel mode flag          */
 
 enum tricore_features {
-    TRICORE_FEATURE_13,
-    TRICORE_FEATURE_131,
-    TRICORE_FEATURE_16,
-    TRICORE_FEATURE_161,
+    TRICORE_FEATURE_13  = 0x00000001,
+    TRICORE_FEATURE_131 = 0x00000002,
+    TRICORE_FEATURE_16  = 0x00000004,
+    TRICORE_FEATURE_161 = 0x00000008,
+    TRICORE_FEATURE_162 = 0x00000010,
 };
 
+
+/* Some handy definitions for upward/downward compatibility of insns.  */
+#define TRICORE_V1_6_2_UP (TRICORE_FEATURE_162)
+#define TRICORE_V1_6_1_UP (TRICORE_FEATURE_161 | TRICORE_V1_6_2_UP)
+#define TRICORE_V1_6_UP   (TRICORE_FEATURE_16 | TRICORE_V1_6_1_UP)
+#define TRICORE_V1_3_1_UP (TRICORE_FEATURE_131 | TRICORE_V1_6_UP)
+#define TRICORE_V1_3_UP   (TRICORE_FEATURE_13 | TRICORE_V1_3_1_UP)
+
+#define TRICORE_V1_3_DN    TRICORE_FEATURE_13
+#define TRICORE_V1_3_1_DN (TRICORE_FEATURE_131 | TRICORE_V1_3_DN)
+#define TRICORE_V1_6_DN   (TRICORE_FEATURE_16 | TRICORE_V1_3_1_DN)
+#define TRICORE_V1_6_1_DN (TRICORE_FEATURE_161 | TRICORE_V1_6_DN)
+#define TRICORE_V1_6_2_DN (TRICORE_FEATURE_162 | TRICORE_V1_6_1_DN)
+
+
+/* Instruction set architecture V1.1.  */
+#define EF_TRICORE_V1_1	        0x00000001
+#define EF_EABI_TRICORE_V1_1	0x80000000
+
+/* Instruction set architecture V1.2.  */
+#define EF_TRICORE_V1_2	        0x00000002
+#define EF_EABI_TRICORE_V1_2	0x40000000
+
+/* Instruction set architecture V1.3  */
+#define EF_TRICORE_V1_3		0x00000004
+#define EF_EABI_TRICORE_V1_3	0x20000000
+
+/* Instruction set architecture V1.3.1  */
+
+#define EF_TRICORE_V1_3_1	0x00000100
+#define EF_EABI_TRICORE_V1_3_1	0x00800000
+
+/* Instruction set architecture V1.6.  */
+
+#define EF_TRICORE_V1_6		0x00000200
+#define EF_EABI_TRICORE_V1_6	0x00400000
+
+/* Instruction set architecture V1.6.1.  */
+
+#define EF_TRICORE_V1_6_1	0x00000400
+#define EF_EABI_TRICORE_V1_6_1	0x00200000
+
+/* Instruction set architecture V1.6.2.  */
+
+#define EF_TRICORE_V1_6_2	0x00000800
+#define EF_EABI_TRICORE_V1_6_2	0x00100000
+
+/* PCP co-processor.  */
+
+#define EF_TRICORE_PCP		0x00000010
+#define EF_EABI_TRICORE_PCP	0x01000000
+
+/* PCP co-processor, version 2.  */
+
+#define EF_TRICORE_PCP2		0x00000020
+#define EF_EABI_TRICORE_PCP2	0x02000000
+
+#define EF_TRICORE_CORE_MASK    	0x00000f0f
+#define EF_EABI_TRICORE_CORE_MASK	0xf0f00000
+
+
+#define SEC_PCP 0x10000000
 static inline int tricore_feature(CPUTriCoreState *env, int feature)
 {
-    return (env->features & (1ULL << feature)) != 0;
+    return (env->features & feature);
 }
+
+
 
 /* TriCore Traps Classes*/
 enum {
@@ -399,6 +488,7 @@ bool tricore_cpu_tlb_fill(CPUState *cs, vaddr address, int size,
                           bool probe, uintptr_t retaddr);
 void tricore_cpu_do_interrupt(CPUState *cpu);
 bool tricore_cpu_exec_interrupt(CPUState *cpu, int int_req);
+void tricore_raise_exception_sync(CPUTriCoreState *env, uint32_t class,uint32_t tin);
 
 #define INSNOPCODE_DEBUG16 0xA000
 #define GCC_VIRTIO_MARKERPCM2 0x6f69
@@ -407,6 +497,7 @@ bool tricore_cpu_exec_interrupt(CPUState *cpu, int int_req);
 #define GCC_VIRTIO_MARKEREXITPCM2_MASK 0x0FFF
 #define EXCP_EXIT 0x1000
 #define EXCP_SEMIHOST 0x1001
+#define EXCP_UNALIGN 0x1002
 #define __VIRTUAL_IO__
 void tricore_vio_init (void);
 int do_tricore_semihosting (CPUState *cs);
