@@ -22,6 +22,11 @@
 #include "exec/cpu_ldst.h"
 #include <zlib.h> /* for crc32 */
 
+#define PSW_USB_C   PSW_USB_BIT31
+#define PSW_USB_V   PSW_USB_BIT30
+#define PSW_USB_SV  PSW_USB_BIT29
+#define PSW_USB_AV  PSW_USB_BIT28
+#define PSW_USB_SAV PSW_USB_BIT27
 
 /* Exception helpers */
 
@@ -84,18 +89,20 @@ raise_exception_sync_internal(CPUTriCoreState *env, uint32_t class, int tin,
       ICR.IE and ICR.CCPN are saved */
 
     /* PCXI.PIE = ICR.IE */
-    if (tricore_feature(env, TRICORE_FEATURE_16)) {
-        env->PCXI = ((env->PCXI & ~MASK_PCXI_PIE_1_6) +
-                    ((env->ICR & MASK_ICR_IE_1_6) << 6));
-       }
-    else if (tricore_feature(env, TRICORE_FEATURE_13))
-   	{
-    	    env->PCXI = ((env->PCXI & ~MASK_PCXI_PIE_1_3) +
-    	                ((env->ICR & MASK_ICR_IE_1_3) << 15));
-   	}
     /* PCXI.PCPN = ICR.CCPN */
-    env->PCXI = (env->PCXI & 0xffffff) +
-                ((env->ICR & MASK_ICR_CCPN) << 24);
+	if (tricore_feature(env, TRICORE_V1_6_1_UP)) {
+        env->PCXI = ((env->PCXI & ~MASK_PCXI_PIE_TC161) +
+                    ((env->ICR & MASK_ICR_IE_TC161) << 6));
+        env->PCXI = (env->PCXI & ~MASK_PCXI_PCPN_TC161) +
+                    ((env->ICR & MASK_ICR_CCPN) << 22);
+       }
+    else
+   	{
+    	env->PCXI = ((env->PCXI & ~MASK_PCXI_PIE_TC131) +
+    	            ((env->ICR & MASK_ICR_IE_TC131) << 15));
+        env->PCXI = (env->PCXI & ~MASK_PCXI_PCPN_TC131) +
+                    ((env->ICR & MASK_ICR_CCPN) << 24);
+   	}
     /* Update PC using the trap vector table */
     env->PC = env->BTV | (class << 5);
 
@@ -103,6 +110,12 @@ raise_exception_sync_internal(CPUTriCoreState *env, uint32_t class, int tin,
 }
 
 void helper_raise_exception_sync(CPUTriCoreState *env, uint32_t class,
+                                 uint32_t tin)
+{
+    raise_exception_sync_internal(env, class, tin, 0, 0);
+}
+
+void tricore_raise_exception_sync(CPUTriCoreState *env, uint32_t class,
                                  uint32_t tin)
 {
     raise_exception_sync_internal(env, class, tin, 0, 0);
@@ -2299,12 +2312,218 @@ uint32_t helper_mulr_h(uint32_t arg00, uint32_t arg01,
     return (result1 & 0xffff0000) | (result0 >> 16);
 }
 
+static const unsigned char BitReverseTable256[] =
+{
+  0x00, 0x80, 0x40, 0xC0, 0x20, 0xA0, 0x60, 0xE0, 0x10, 0x90, 0x50, 0xD0, 0x30, 0xB0, 0x70, 0xF0,
+  0x08, 0x88, 0x48, 0xC8, 0x28, 0xA8, 0x68, 0xE8, 0x18, 0x98, 0x58, 0xD8, 0x38, 0xB8, 0x78, 0xF8,
+  0x04, 0x84, 0x44, 0xC4, 0x24, 0xA4, 0x64, 0xE4, 0x14, 0x94, 0x54, 0xD4, 0x34, 0xB4, 0x74, 0xF4,
+  0x0C, 0x8C, 0x4C, 0xCC, 0x2C, 0xAC, 0x6C, 0xEC, 0x1C, 0x9C, 0x5C, 0xDC, 0x3C, 0xBC, 0x7C, 0xFC,
+  0x02, 0x82, 0x42, 0xC2, 0x22, 0xA2, 0x62, 0xE2, 0x12, 0x92, 0x52, 0xD2, 0x32, 0xB2, 0x72, 0xF2,
+  0x0A, 0x8A, 0x4A, 0xCA, 0x2A, 0xAA, 0x6A, 0xEA, 0x1A, 0x9A, 0x5A, 0xDA, 0x3A, 0xBA, 0x7A, 0xFA,
+  0x06, 0x86, 0x46, 0xC6, 0x26, 0xA6, 0x66, 0xE6, 0x16, 0x96, 0x56, 0xD6, 0x36, 0xB6, 0x76, 0xF6,
+  0x0E, 0x8E, 0x4E, 0xCE, 0x2E, 0xAE, 0x6E, 0xEE, 0x1E, 0x9E, 0x5E, 0xDE, 0x3E, 0xBE, 0x7E, 0xFE,
+  0x01, 0x81, 0x41, 0xC1, 0x21, 0xA1, 0x61, 0xE1, 0x11, 0x91, 0x51, 0xD1, 0x31, 0xB1, 0x71, 0xF1,
+  0x09, 0x89, 0x49, 0xC9, 0x29, 0xA9, 0x69, 0xE9, 0x19, 0x99, 0x59, 0xD9, 0x39, 0xB9, 0x79, 0xF9,
+  0x05, 0x85, 0x45, 0xC5, 0x25, 0xA5, 0x65, 0xE5, 0x15, 0x95, 0x55, 0xD5, 0x35, 0xB5, 0x75, 0xF5,
+  0x0D, 0x8D, 0x4D, 0xCD, 0x2D, 0xAD, 0x6D, 0xED, 0x1D, 0x9D, 0x5D, 0xDD, 0x3D, 0xBD, 0x7D, 0xFD,
+  0x03, 0x83, 0x43, 0xC3, 0x23, 0xA3, 0x63, 0xE3, 0x13, 0x93, 0x53, 0xD3, 0x33, 0xB3, 0x73, 0xF3,
+  0x0B, 0x8B, 0x4B, 0xCB, 0x2B, 0xAB, 0x6B, 0xEB, 0x1B, 0x9B, 0x5B, 0xDB, 0x3B, 0xBB, 0x7B, 0xFB,
+  0x07, 0x87, 0x47, 0xC7, 0x27, 0xA7, 0x67, 0xE7, 0x17, 0x97, 0x57, 0xD7, 0x37, 0xB7, 0x77, 0xF7,
+  0x0F, 0x8F, 0x4F, 0xCF, 0x2F, 0xAF, 0x6F, 0xEF, 0x1F, 0x9F, 0x5F, 0xDF, 0x3F, 0xBF, 0x7F, 0xFF
+};
+
 uint32_t helper_crc32(uint32_t arg0, uint32_t arg1)
 {
     uint8_t buf[4];
     stl_be_p(buf, arg0);
-
     return crc32(arg1, buf, 4);
+}
+
+uint32_t helper_crc32lw(uint32_t arg0, uint32_t arg1)
+{
+    uint8_t buf[4];
+    stl_le_p(buf, arg0);
+    return crc32(arg1, buf, 4);
+}
+
+uint32_t helper_crc32b(uint32_t arg0, uint32_t arg1)
+{
+	uint8_t buf[1];
+	buf[0]=extract32(arg0, 0, 8);
+    return crc32(arg1, buf,1);
+}
+
+/*
+ * Calculate the CRC value for 1 to 8 bits of input data using a user-defined CRC algorithm with a CRC width from 1 up
+to 16 bits. Register D[d] contains an initial seed value. The register D[a] specifies all parameters of the CRC algorithm.
+Register D[b] contains the input data. The result is stored in register D[c].
+The field D[a][15:12] contains N-1, where N is the CRC width in the range [1,16].
+If the bit D[a][8] is set then input data bit order is treated as little-endian, otherwise input data bit order is treated as
+big-endian. For little-endian bit order, the bit D[b][0] is processed first. For big-endian bit order, the bit D[b][0] is
+processed last.
+If the bit D[a][9] is set, a bitwise logical inversion is applied to both the result and seed values.
+D[d][N-1:0] contains either an initial seed value, or the cumulative CRC result from a previous sequence of data. The
+seed value should be initialized according to the chosen CRC algorithm. Note that the result invert bit, D[a][9], must
+be taken into account when specifying the seed as the inversion is applied to the initial seed value as well as the final
+result.
+The field D[a][16+N-1:16] encodes the coefficients of the generator polynomial. The coefficient of the most significant
+term is omitted as it must be 1 by definition. D[a][16+N-1:16] contains the remaining coefficients, stored with the
+highest term in D[a][16+N-1] and lowest term in D[a][16]. E.g., the CRC-8-SAE J1850 polynomial is encoded as 1DH.
+All unused bits in the register D[a] must be zero.
+The field D[a][2:0] contains M-1, where M is the input data width in the range [1,8].
+The field D[b][M-1:0] contains the input data. All other bits in D[b] are ignored.
+The CRC result is stored in the register D[c]. D[c][N-1:0] contains the CRC result and all other bits are set to zero.
+The result register can be used as the seed input for a subsequent CRCN instruction. By chaining CRCN instructions
+in this way data larger than 8 bits in length can be processed
+CRCN D[c], D[d], D[a], D[b] (RRR)
+
+crc_div(c, g, crc_width, data_width)
+‘c’ and ‘g’ each contain the coefficients of polynomials defined over GF(2).
+In the polynomial f(x), represented by the binary value v, bit v[n] is the
+coefficient of the term xn
+. The value returned by this function is the binary
+number representing the coefficients of the remainder from the following
+polymomial division:
+(c << shift) % (g | (1 << crc_width) ) where shift = min(crc_width, data_width)
+
+
+N = D[a][15:12] + 1;   #N is the width of the Polynom
+GEN = D[a][16+N-1:16]; #GEN is the Generator Polynom
+{INV, LITTLE_E} = D[a][9:8]; #INV and LITTLE_E encoding
+M = D[a][2:0] + 1; #M input data data width
+data = D[b][M-1:0];
+if (LITTLE_E) then {
+ data = reverse(data, M); #Little Endian
+}
+seed = D[d][N-1:0]; #Seed input seed
+if (INV) then {
+ seed = ~seed; # Invert seed
+}
+// 'crc_in' width matches biggest of 'data' and 'seed'
+if (N <= M) then {
+ crc_in[M-1:0] = data ^ (seed << (M-N));
+} else {
+ crc_in[N-1:0] = (data << (N-M)) ^ seed;
+}
+result = crc_div(crc_in, GEN, N, M);
+if (INV) then {
+ result = ~result;
+}
+D[c][N-1:0] = result;
+D[c][31:N] = 0;
+*/
+
+static uint32_t
+reflect32(uint32_t data, uint32_t nBits)
+{
+	uint32_t  reflection = 0x00000000;
+	uint32_t  bit;
+	for (bit = 0; bit < nBits; ++bit)
+	{
+		if (data & 0x01) reflection |= (1 << ((nBits - 1) - bit));
+		data = (data >> 1);
+	}
+	return (reflection);
+}
+
+uint32_t helper_crcn(uint32_t arg0, uint32_t arg1,uint32_t arg2)
+{
+/* crcn res, arg2,arg0,arg1
+	 arg 0 is D[a]
+	 * parameters
+	 * bit15..12 crcwidth-1
+	 * bit8=1 LE, bit8=BE
+	 * bit9=1 inversion of seed and result
+	 * bit16+crcwidth-1...bit16=crcpoly
+	 * bit2..0=inputdatawidth-1
+	 * arg 1 is D[b] input data
+	 * arg 2 is D[d] initial seed
+	 */
+	uint32_t N;
+	uint32_t GEN;
+	uint32_t INV;
+	uint32_t LE;
+	uint32_t M;
+	uint32_t data;
+	uint32_t seed;
+	uint32_t crc_out;
+	uint32_t crc_in;
+	uint32_t I;
+
+	N=((arg0 >> 12) & 0xF)+1; //the seed/crc lenght
+	GEN=(arg0 >> 16) & 0xFFFF;
+	GEN=GEN & ~(0xFFFFFFFFul<<N);
+	INV=(arg0 >> 9) & 0x1;
+	LE=(arg0 >> 8) & 0x1;
+	M=((arg0 & 0x7))+1;
+	data=arg1 & ~(0xFFFFFFFFul<<M);
+	if (LE==1) data=reflect32(data,M);
+	seed=arg2 & ~(0xFFFFFFFFul<<N);
+	if (INV==1) seed=~seed;
+	if (M>N)
+	{
+		crc_in= (data >> (M-N)) ^ seed;
+	}
+	else
+	{
+		crc_in= ( data << (N-M)) ^ seed;
+	}
+
+	data = data << N;
+	data = data & ~(0xFFFFFFFFul<<M);
+	for (I = 0; I < M; I+=1)
+	{
+		if (crc_in & (1u << (N - 1)))
+		{
+			crc_in <<= 1;
+			if (data & (1u << (M- 1))) crc_in++;
+			crc_in ^= GEN;
+		}
+		else
+		{
+			crc_in <<= 1;
+			if (data & (1u << (M- 1))) crc_in++;
+		}
+		data <<= 1;
+		data &= ~(0xFFFFFFFFul<<M);
+	}
+
+	crc_out=crc_in;
+	if (INV) {
+		crc_out = ~crc_out;
+	}
+	crc_out&=~(0xFFFFFFFFul<<N);
+	return crc_out;
+}
+
+
+uint32_t helper_popcntw(uint32_t arg0)
+{
+    return ctpop32(arg0);
+}
+
+uint32_t helper_shuffle(uint32_t arg0, uint32_t arg1)
+{
+    uint8_t buf[4];
+    uint8_t resbuf[4];
+	uint32_t res=0;
+	uint32_t byte_select;
+
+	stl_le_p(buf, arg0);
+	byte_select=arg1 & 0x3;
+	resbuf[0]=buf[byte_select];
+	if (arg1 & 0x100) resbuf[0]=BitReverseTable256[resbuf[0]];
+	byte_select=(arg1>>2) & 0x3;
+	resbuf[1]=buf[byte_select];
+	if (arg1 & 0x100) resbuf[1]=BitReverseTable256[resbuf[1]];
+	byte_select=(arg1>>4) & 0x3;
+	resbuf[2]=buf[byte_select];
+	if (arg1 & 0x100) resbuf[2]=BitReverseTable256[resbuf[2]];
+	byte_select=(arg1>>6) & 0x3;
+	resbuf[3]=buf[byte_select];
+	if (arg1 & 0x100) resbuf[3]=BitReverseTable256[resbuf[3]];
+	res=ldl_le_p(resbuf);
+    return res;
 }
 
 /* context save area (CSA) related helpers */
@@ -2475,20 +2694,22 @@ void helper_call(CPUTriCoreState *env, uint32_t next_pc)
     save_context_upper(env, ea);
 
     /* PCXI.PCPN = ICR.CCPN; */
-    env->PCXI = (env->PCXI & 0xffffff) +
-                ((env->ICR & MASK_ICR_CCPN) << 24);
     /* PCXI.PIE = ICR.IE; */
     /* PCXI.UL = 1; */
-    if (tricore_feature(env, TRICORE_FEATURE_16)) {
-        env->PCXI = ((env->PCXI & ~MASK_PCXI_PIE_1_6) +
-                    ((env->ICR & MASK_ICR_IE_1_6) << 6));
-	    env->PCXI |= MASK_PCXI_UL_1_6;
+	if (tricore_feature(env, TRICORE_V1_6_1_UP)) {
+        env->PCXI = (env->PCXI & ~MASK_PCXI_PCPN_TC161) +
+                    ((env->ICR & MASK_ICR_CCPN) << 22);
+        env->PCXI = ((env->PCXI & ~MASK_PCXI_PIE_TC161) +
+                    ((env->ICR & MASK_ICR_IE_TC161) << 6));
+        env->PCXI |= MASK_PCXI_UL_TC161;
        }
-       else if (tricore_feature(env, TRICORE_FEATURE_13))
+    else
    	{
-    	    env->PCXI = ((env->PCXI & ~MASK_PCXI_PIE_1_3) +
-    	                ((env->ICR & MASK_ICR_IE_1_3) << 15));
-    	    env->PCXI |= MASK_PCXI_UL_1_3;
+        env->PCXI = (env->PCXI & ~MASK_PCXI_PCPN_TC131) +
+                    ((env->ICR & MASK_ICR_CCPN) << 24);
+    	env->PCXI = ((env->PCXI & ~MASK_PCXI_PIE_TC131) +
+    	            ((env->ICR & MASK_ICR_IE_TC131) << 15));
+        env->PCXI |= MASK_PCXI_UL_TC131;
    	}
 
     /* PCXI[19: 0] = FCX[19: 0]; */
@@ -2505,6 +2726,13 @@ void helper_call(CPUTriCoreState *env, uint32_t next_pc)
     }
     psw_write(env, psw);
 }
+
+void helper_addralign(CPUTriCoreState *env, uint32_t addr)
+{
+printf("Address %8.8X\n",addr);
+raise_exception_sync_helper(env, TRAPC_INSN_ERR, TIN2_ALN, GETPC());
+}
+
 
 void helper_ret(CPUTriCoreState *env)
 {
@@ -2528,17 +2756,17 @@ void helper_ret(CPUTriCoreState *env)
         raise_exception_sync_helper(env, TRAPC_CTX_MNG, TIN3_CSU, GETPC());
     }
     /* if (PCXI.UL == 0) then trap(CTYP); */
-    if (tricore_feature(env, TRICORE_FEATURE_16)) {
-        if ((env->PCXI & MASK_PCXI_UL_1_6) == 0) {
+    if (tricore_feature(env, TRICORE_V1_6_1_UP)) {
+        if ((env->PCXI & MASK_PCXI_UL_TC161) == 0) {
             /* CTYP trap */
             cdc_increment(&psw); /* restore to the start of helper */
             psw_write(env, psw);
             raise_exception_sync_helper(env, TRAPC_CTX_MNG, TIN3_CTYP, GETPC());
         }
        }
-       else if (tricore_feature(env, TRICORE_FEATURE_13))
+       else
    	{
-    	    if ((env->PCXI & MASK_PCXI_UL_1_3) == 0) {
+    	    if ((env->PCXI & MASK_PCXI_UL_TC131) == 0) {
     	        /* CTYP trap */
     	        cdc_increment(&psw); /* restore to the start of helper */
     	        psw_write(env, psw);
@@ -2561,12 +2789,13 @@ void helper_ret(CPUTriCoreState *env)
     /* PCXI = new_PCXI; */
     env->PCXI = new_PCXI;
 
-    if (tricore_feature(env, TRICORE_FEATURE_13)) {
+    if (tricore_feature(env, TRICORE_V1_3_1_UP)) {
+        /* PSW = {new_PSW[31:26], PSW[25:24], new_PSW[23:0]}; */
+        /* TODO implement the compatibility mode by COMPAT Register towards old behavior */
+    	psw_write(env, (new_PSW & ~(0x3000000)) + (psw & (0x3000000)));
+    } else {
         /* PSW = new_PSW */
         psw_write(env, new_PSW);
-    } else {
-        /* PSW = {new_PSW[31:26], PSW[25:24], new_PSW[23:0]}; */
-        psw_write(env, (new_PSW & ~(0x3000000)) + (psw & (0x3000000)));
     }
 }
 
@@ -2596,29 +2825,32 @@ void helper_bisr(CPUTriCoreState *env, uint32_t const9)
                  ((env->ICR & MASK_ICR_CCPN) << 24);
     /* PCXI.PIE = ICR.IE; */
     /* PCXI.UL = 0; */
-    if (tricore_feature(env, TRICORE_FEATURE_16)) {
-    	env->PCXI = ((env->PCXI & ~MASK_PCXI_PIE_1_6) +
-    			((env->ICR & MASK_ICR_IE_1_6) << 6));
-    	env->PCXI &= ~(MASK_PCXI_UL_1_6);
-    }
-    else if (tricore_feature(env, TRICORE_FEATURE_13))
-    {
-    	env->PCXI = ((env->PCXI & ~MASK_PCXI_PIE_1_3) +
-    			((env->ICR & MASK_ICR_IE_1_3) << 15));
-    	env->PCXI &= ~(MASK_PCXI_UL_1_3);
-    }
+	if (tricore_feature(env, TRICORE_V1_6_1_UP)) {
+        env->PCXI = ((env->PCXI & ~MASK_PCXI_PIE_TC161) +
+                    ((env->ICR & MASK_ICR_IE_TC161) << 6));
+        env->PCXI = (env->PCXI & ~MASK_PCXI_PCPN_TC161) +
+                    ((env->ICR & MASK_ICR_CCPN) << 22);
+        env->PCXI &= ~(MASK_PCXI_UL_TC161);
+       }
+    else
+   	{
+    	env->PCXI = ((env->PCXI & ~MASK_PCXI_PIE_TC131) +
+    	            ((env->ICR & MASK_ICR_IE_TC131) << 15));
+        env->PCXI = (env->PCXI & ~MASK_PCXI_PCPN_TC131) +
+                    ((env->ICR & MASK_ICR_CCPN) << 24);
+        env->PCXI &= ~(MASK_PCXI_UL_TC131);
+   	}
     /* PCXI[19: 0] = FCX[19: 0] */
     env->PCXI = (env->PCXI & 0xfff00000) + (env->FCX & 0xfffff);
     /* FXC[19: 0] = new_FCX[19: 0] */
     env->FCX = (env->FCX & 0xfff00000) + (new_FCX & 0xfffff);
     /* ICR.IE = 1 */
-    env->ICR |= MASK_ICR_IE_1_3;
-    if (tricore_feature(env, TRICORE_FEATURE_16)) {
-    	env->ICR |= MASK_ICR_IE_1_6;
+    if (tricore_feature(env, TRICORE_V1_6_1_UP)) {
+    	env->ICR |= MASK_ICR_IE_TC161;
     }
-    else if (tricore_feature(env, TRICORE_FEATURE_13))
+    else
     {
-    	env->ICR |= MASK_ICR_IE_1_3;
+    	env->ICR |= MASK_ICR_IE_TC131;
     }
     env->ICR |= const9; /* ICR.CCPN = const9[7: 0];*/
 
@@ -2639,15 +2871,15 @@ void helper_rfe(CPUTriCoreState *env)
         raise_exception_sync_helper(env, TRAPC_CTX_MNG, TIN3_CSU, GETPC());
     }
     /* if (PCXI.UL == 0) then trap(CTYP); */
-    if (tricore_feature(env, TRICORE_FEATURE_16)) {
-    	if ((env->PCXI & MASK_PCXI_UL_1_6) == 0) {
+    if (tricore_feature(env, TRICORE_V1_6_1_UP)) {
+    	if ((env->PCXI & MASK_PCXI_UL_TC161) == 0) {
     	        /* raise CTYP trap */
     	        raise_exception_sync_helper(env, TRAPC_CTX_MNG, TIN3_CTYP, GETPC());
     	    }
        }
-       else if (tricore_feature(env, TRICORE_FEATURE_13))
+       else
    	{
-    	   if ((env->PCXI & MASK_PCXI_UL_1_3) == 0) {
+    	   if ((env->PCXI & MASK_PCXI_UL_TC131) == 0) {
     	           /* raise CTYP trap */
     	           raise_exception_sync_helper(env, TRAPC_CTX_MNG, TIN3_CTYP, GETPC());
     	       }
@@ -2660,27 +2892,21 @@ void helper_rfe(CPUTriCoreState *env)
     }
     env->PC = env->gpr_a[11] & ~0x1;
     /* ICR.IE = PCXI.PIE; */
-    if (tricore_feature(env, TRICORE_FEATURE_16)) {
-        env->PCXI = ((env->PCXI & ~MASK_PCXI_PIE_1_6) +
-                    ((env->ICR & MASK_ICR_IE_1_6) << 6));
-       }
-       else if (tricore_feature(env, TRICORE_FEATURE_13))
-   	{
-    	    env->PCXI = ((env->PCXI & ~MASK_PCXI_PIE_1_3) +
-    	                ((env->ICR & MASK_ICR_IE_1_3) << 15));
-   	}
     /* ICR.CCPN = PCXI.PCPN; */
-    if (tricore_feature(env, TRICORE_FEATURE_16)) {
-    env->ICR = (env->ICR & ~MASK_ICR_CCPN) +
-               ((env->PCXI & MASK_PCXI_PCPN_1_6) >> 22);
-    }
-    else if (tricore_feature(env, TRICORE_FEATURE_13))
-	{
+    if (tricore_feature(env, TRICORE_V1_6_1_UP)) {
+        env->PCXI = ((env->PCXI & ~MASK_PCXI_PIE_TC161) +
+                    ((env->ICR & MASK_ICR_IE_TC161) << 6));
         env->ICR = (env->ICR & ~MASK_ICR_CCPN) +
-                   ((env->PCXI & MASK_PCXI_PCPN_1_3) >> 24);
-	}
-
-    /*EA = {PCXI.PCXS, 6'b0, PCXI.PCXO, 6'b0};*/
+                   ((env->PCXI & MASK_PCXI_PCPN_TC161) >> 22);
+       }
+    else
+   	{
+    	env->PCXI = ((env->PCXI & ~MASK_PCXI_PIE_TC131) +
+    	            ((env->ICR & MASK_ICR_IE_TC131) << 15));
+        env->ICR = (env->ICR & ~MASK_ICR_CCPN) +
+                   ((env->PCXI & MASK_PCXI_PCPN_TC131) >> 24);
+   	}
+     /*EA = {PCXI.PCXS, 6'b0, PCXI.PCXO, 6'b0};*/
     ea = ((env->PCXI & MASK_PCXI_PCXS) << 12) +
          ((env->PCXI & MASK_PCXI_PCXO) << 6);
     /*{new_PCXI, PSW, A[10], A[11], D[8], D[9], D[10], D[11], A[12],
@@ -2700,32 +2926,27 @@ void helper_rfm(CPUTriCoreState *env)
 {
     env->PC = (env->gpr_a[11] & ~0x1);
     /* ICR.IE = PCXI.PIE; */
-    if (tricore_feature(env, TRICORE_FEATURE_16)) {
-        env->PCXI = ((env->PCXI & ~MASK_PCXI_PIE_1_6) +
-                    ((env->ICR & MASK_ICR_IE_1_6) << 6));
-       }
-       else if (tricore_feature(env, TRICORE_FEATURE_13))
-   	{
-    	    env->PCXI = ((env->PCXI & ~MASK_PCXI_PIE_1_3) +
-    	                ((env->ICR & MASK_ICR_IE_1_3) << 15));
-   	}
     /* ICR.CCPN = PCXI.PCPN; */
-    if (tricore_feature(env, TRICORE_FEATURE_16)) {
-        env->ICR = (env->ICR & ~MASK_ICR_CCPN) |
-                   ((env->PCXI & MASK_PCXI_PCPN_1_6) >> 22);
-    }
-    else if (tricore_feature(env, TRICORE_FEATURE_13))
-	{
-        env->ICR = (env->ICR & ~MASK_ICR_CCPN) |
-                   ((env->PCXI & MASK_PCXI_PCPN_1_3) >> 24);
-	}
+    if (tricore_feature(env, TRICORE_V1_6_1_UP)) {
+        env->PCXI = ((env->PCXI & ~MASK_PCXI_PIE_TC161) +
+                    ((env->ICR & MASK_ICR_IE_TC161) << 6));
+        env->ICR = (env->ICR & ~MASK_ICR_CCPN) +
+                   ((env->PCXI & MASK_PCXI_PCPN_TC161) >> 22);
+       }
+    else
+   	{
+    	env->PCXI = ((env->PCXI & ~MASK_PCXI_PIE_TC131) +
+    	            ((env->ICR & MASK_ICR_IE_TC131) << 15));
+        env->ICR = (env->ICR & ~MASK_ICR_CCPN) +
+                   ((env->PCXI & MASK_PCXI_PCPN_TC131) >> 24);
+   	}
     /* {PCXI, PSW, A[10], A[11]} = M(DCX, 4 * word); */
     env->PCXI = cpu_ldl_data(env, env->DCX);
     psw_write(env, cpu_ldl_data(env, env->DCX+4));
     env->gpr_a[10] = cpu_ldl_data(env, env->DCX+8);
     env->gpr_a[11] = cpu_ldl_data(env, env->DCX+12);
 
-    if (tricore_feature(env, TRICORE_FEATURE_131)) {
+    if (tricore_feature(env, TRICORE_V1_3_1_UP)) {
         env->DBGTCR = 0;
     }
 }
@@ -2777,20 +2998,22 @@ void helper_svlcx(CPUTriCoreState *env)
     save_context_lower(env, ea);
 
     /* PCXI.PCPN = ICR.CCPN; */
-    env->PCXI = (env->PCXI & 0xffffff) +
-                ((env->ICR & MASK_ICR_CCPN) << 24);
     /* PCXI.PIE = ICR.IE; */
     /* PCXI.UL = 0; */
-    if (tricore_feature(env, TRICORE_FEATURE_16)) {
-        env->PCXI = ((env->PCXI & ~MASK_PCXI_PIE_1_6) +
-                    ((env->ICR & MASK_ICR_IE_1_6) << 6));
-	    env->PCXI &= ~MASK_PCXI_UL_1_6;
+	if (tricore_feature(env, TRICORE_V1_6_1_UP)) {
+        env->PCXI = (env->PCXI & ~MASK_PCXI_PCPN_TC161) +
+                    ((env->ICR & MASK_ICR_CCPN) << 22);
+        env->PCXI = ((env->PCXI & ~MASK_PCXI_PIE_TC161) +
+                    ((env->ICR & MASK_ICR_IE_TC161) << 6));
+        env->PCXI &= ~(MASK_PCXI_UL_TC161);
        }
-       else if (tricore_feature(env, TRICORE_FEATURE_13))
+    else
    	{
-    	    env->PCXI = ((env->PCXI & ~MASK_PCXI_PIE_1_3) +
-    	                ((env->ICR & MASK_ICR_IE_1_3) << 15));
-    	    env->PCXI &= ~MASK_PCXI_UL_1_3;
+        env->PCXI = (env->PCXI & ~MASK_PCXI_PCPN_TC131) +
+                    ((env->ICR & MASK_ICR_CCPN) << 24);
+    	env->PCXI = ((env->PCXI & ~MASK_PCXI_PIE_TC131) +
+    	            ((env->ICR & MASK_ICR_IE_TC131) << 15));
+        env->PCXI &= ~(MASK_PCXI_UL_TC131);
    	}
 
     /* PCXI[19: 0] = FCX[19: 0]; */
@@ -2828,22 +3051,23 @@ void helper_svucx(CPUTriCoreState *env)
     save_context_upper(env, ea);
 
     /* PCXI.PCPN = ICR.CCPN; */
-    env->PCXI = (env->PCXI & 0xffffff) +
-                ((env->ICR & MASK_ICR_CCPN) << 24);
     /* PCXI.PIE = ICR.IE; */
     /* PCXI.UL = 1; */
-    if (tricore_feature(env, TRICORE_FEATURE_16)) {
-        env->PCXI = ((env->PCXI & ~MASK_PCXI_PIE_1_6) +
-                    ((env->ICR & MASK_ICR_IE_1_6) << 6));
-	    env->PCXI |= MASK_PCXI_UL_1_6;
+	if (tricore_feature(env, TRICORE_V1_6_1_UP)) {
+        env->PCXI = (env->PCXI & ~MASK_PCXI_PCPN_TC161) +
+                    ((env->ICR & MASK_ICR_CCPN) << 22);
+        env->PCXI = ((env->PCXI & ~MASK_PCXI_PIE_TC161) +
+                    ((env->ICR & MASK_ICR_IE_TC161) << 6));
+        env->PCXI |= MASK_PCXI_UL_TC161;
        }
-       else if (tricore_feature(env, TRICORE_FEATURE_13))
+    else
    	{
-    	    env->PCXI = ((env->PCXI & ~MASK_PCXI_PIE_1_3) +
-    	                ((env->ICR & MASK_ICR_IE_1_3) << 15));
-    	    env->PCXI |= MASK_PCXI_UL_1_3;
+        env->PCXI = (env->PCXI & ~MASK_PCXI_PCPN_TC131) +
+                    ((env->ICR & MASK_ICR_CCPN) << 24);
+    	env->PCXI = ((env->PCXI & ~MASK_PCXI_PIE_TC131) +
+    	            ((env->ICR & MASK_ICR_IE_TC131) << 15));
+        env->PCXI |= MASK_PCXI_UL_TC131;
    	}
-
     /* PCXI[19: 0] = FCX[19: 0]; */
     env->PCXI = (env->PCXI & 0xfff00000) + (env->FCX & 0xfffff);
     /* FCX[19: 0] = new_FCX[19: 0]; */
@@ -2866,20 +3090,19 @@ void helper_rslcx(CPUTriCoreState *env)
         raise_exception_sync_helper(env, TRAPC_CTX_MNG, TIN3_CSU, GETPC());
     }
     /* if (PCXI.UL == 1) then trap(CTYP); */
-
-    if (tricore_feature(env, TRICORE_FEATURE_16)) {
-    	if ((env->PCXI & MASK_PCXI_UL_1_6) == 0) {
-    		/* raise CTYP trap */
-    		raise_exception_sync_helper(env, TRAPC_CTX_MNG, TIN3_CTYP, GETPC());
-    	}
-    }
-    else if (tricore_feature(env, TRICORE_FEATURE_13))
-    {
-    	if ((env->PCXI & MASK_PCXI_UL_1_3) == 0) {
-    		/* raise CTYP trap */
-    		raise_exception_sync_helper(env, TRAPC_CTX_MNG, TIN3_CTYP, GETPC());
-    	}
-    }
+    if (tricore_feature(env, TRICORE_V1_6_1_UP)) {
+    	if ((env->PCXI & MASK_PCXI_UL_TC161) == 1) {
+    	        /* raise CTYP trap */
+    	        raise_exception_sync_helper(env, TRAPC_CTX_MNG, TIN3_CTYP, GETPC());
+    	    }
+       }
+       else
+   	{
+    	   if ((env->PCXI & MASK_PCXI_UL_TC131) == 1) {
+    	           /* raise CTYP trap */
+    	           raise_exception_sync_helper(env, TRAPC_CTX_MNG, TIN3_CTYP, GETPC());
+    	       }
+   	}
 
     /* EA = {PCXI.PCXS, 6'b0, PCXI.PCXO, 6'b0}; */
     ea = ((env->PCXI & MASK_PCXI_PCXS) << 12) +
