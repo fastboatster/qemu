@@ -14,7 +14,7 @@
  * You should have received a copy of the GNU Lesser General Public
  * License along with this library; if not, see <http://www.gnu.org/licenses/>.
  */
-
+/* configure Helper as TCG_CALL_NO_RWG_SE if only the ret is changed, e.g. no side influence to status flags etc. */
 /* Arithmetic */
 DEF_HELPER_3(add_ssov, i32, env, i32, i32)
 DEF_HELPER_3(add64_ssov, i64, env, i64, i64)
@@ -95,10 +95,16 @@ DEF_HELPER_FLAGS_2(sh, TCG_CALL_NO_RWG_SE, i32, i32, i32)
 DEF_HELPER_FLAGS_2(sh_h, TCG_CALL_NO_RWG_SE, i32, i32, i32)
 DEF_HELPER_3(sha, i32, env, i32, i32)
 DEF_HELPER_2(sha_h, i32, i32, i32)
-/* merge/split/parity */
+/* merge/split/parity/byte manipulation */
 DEF_HELPER_FLAGS_2(bmerge, TCG_CALL_NO_RWG_SE, i32, i32, i32)
 DEF_HELPER_FLAGS_1(bsplit, TCG_CALL_NO_RWG_SE, i64, i32)
 DEF_HELPER_FLAGS_1(parity, TCG_CALL_NO_RWG_SE, i32, i32)
+DEF_HELPER_FLAGS_2(crc32, TCG_CALL_NO_RWG_SE, i32, i32, i32)
+DEF_HELPER_FLAGS_2(crc32lw, TCG_CALL_NO_RWG_SE, i32, i32, i32)
+DEF_HELPER_FLAGS_2(crc32b, TCG_CALL_NO_RWG_SE, i32, i32, i32)
+DEF_HELPER_FLAGS_3(crcn, TCG_CALL_NO_RWG_SE, i32, i32, i32,i32)
+DEF_HELPER_FLAGS_1(popcntw, TCG_CALL_NO_RWG_SE, i32, i32)
+DEF_HELPER_FLAGS_2(shuffle, TCG_CALL_NO_RWG_SE, i32, i32, i32)
 /* float */
 DEF_HELPER_FLAGS_4(pack, TCG_CALL_NO_RWG_SE, i32, i32, i32, i32, i32)
 DEF_HELPER_1(unpack, i64, i32)
@@ -116,6 +122,12 @@ DEF_HELPER_2(utof, i32, env, i32)
 DEF_HELPER_2(ftoiz, i32, env, i32)
 DEF_HELPER_2(ftouz, i32, env, i32)
 DEF_HELPER_2(updfl, void, env, i32)
+DEF_HELPER_3(ftoq31, i32, env, i32, i32)
+DEF_HELPER_3(ftoq31z, i32, env, i32, i32)
+DEF_HELPER_3(q31tof, i32, env, i32, i32)
+DEF_HELPER_2(ftohp, i32, env, i32)
+DEF_HELPER_2(hptof, i32, env, i32)
+
 /* dvinit */
 DEF_HELPER_3(dvinit_b_13, i64, env, i32, i32)
 DEF_HELPER_3(dvinit_b_131, i64, env, i32, i32)
@@ -130,8 +142,8 @@ DEF_HELPER_3(divide_u, i64, env, i32, i32)
 DEF_HELPER_FLAGS_5(mul_h, TCG_CALL_NO_RWG_SE, i64, i32, i32, i32, i32, i32)
 DEF_HELPER_FLAGS_5(mulm_h, TCG_CALL_NO_RWG_SE, i64, i32, i32, i32, i32, i32)
 DEF_HELPER_FLAGS_5(mulr_h, TCG_CALL_NO_RWG_SE, i32, i32, i32, i32, i32, i32)
-/* crc32 */
-DEF_HELPER_FLAGS_2(crc32, TCG_CALL_NO_RWG_SE, i32, i32, i32)
+/*alignment */
+DEF_HELPER_2(addralign, void, env, i32)
 /* CSA */
 DEF_HELPER_2(call, void, env, i32)
 DEF_HELPER_1(ret, void, env)
