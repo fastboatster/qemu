@@ -5034,7 +5034,7 @@ static void decode_bo_addrmode_ld_post_pre_base(DisasContext *ctx)
         tcg_gen_addi_tl(cpu_gpr_a[r2], cpu_gpr_a[r2], off10);
         break;
     case OPC2_32_BO_LD_BU_PREINC:
-        gen_ld_preincr(ctx, cpu_gpr_d[r1], cpu_gpr_a[r2], off10, MO_SB);
+        gen_ld_preincr(ctx, cpu_gpr_d[r1], cpu_gpr_a[r2], off10, MO_UB);
         break;
     case OPC2_32_BO_LD_D_SHORTOFF:
         CHECK_REG_PAIR(r1);
@@ -8408,6 +8408,7 @@ static void decode_rrr1_msubad_h(DisasContext *ctx)
     }
 }
 
+/* RRRR format */
 /* RRRR format */
 static void decode_rrrr_extract_insert(DisasContext *ctx)
 {

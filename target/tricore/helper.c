@@ -158,12 +158,12 @@ void psw_write(CPUTriCoreState *env, uint32_t val)
 {
     env->PSW_USB_BIT31 = (val & MASK_USB_BIT31);
     env->PSW_USB_BIT30 = (val & MASK_USB_BIT30) << 1;
-    env->PSW_USB_BIT29 = (val & MASK_USB_BIT30) << 2;
-    env->PSW_USB_BIT28 = (val & MASK_USB_BIT30) << 3;
-    env->PSW_USB_BIT27 = (val & MASK_USB_BIT30) << 4;
-    env->PSW_USB_BIT26 = (val & MASK_USB_BIT30) << 5;
-    env->PSW_USB_BIT25 = (val & MASK_USB_BIT30) << 6;
-    env->PSW_USB_BIT24 = (val & MASK_USB_BIT30) << 7;
+    env->PSW_USB_BIT29 = (val & MASK_USB_BIT29) << 2;
+    env->PSW_USB_BIT28 = (val & MASK_USB_BIT28) << 3;
+    env->PSW_USB_BIT27 = (val & MASK_USB_BIT27) << 4;
+    env->PSW_USB_BIT26 = (val & MASK_USB_BIT26) << 5;
+    env->PSW_USB_BIT25 = (val & MASK_USB_BIT25) << 6;
+    env->PSW_USB_BIT24 = (val & MASK_USB_BIT24) << 7;
     env->PSW = val;
 
     fpu_set_state(env);
