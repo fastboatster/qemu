@@ -8415,6 +8415,7 @@ static void decode_rrrr_extract_insert(DisasContext *ctx)
     uint32_t op2;
     int r1, r2, r3, r4;
     TCGv tmp_width, tmp_pos;
+    TCGv tmp_LSW, tmp_MSW;
 
     r1 = MASK_OP_RRRR_S1(ctx->opcode);
     r2 = MASK_OP_RRRR_S2(ctx->opcode);
@@ -8424,6 +8425,8 @@ static void decode_rrrr_extract_insert(DisasContext *ctx)
 
     tmp_pos = tcg_temp_new();
     tmp_width = tcg_temp_new();
+    tmp_MSW = tcg_temp_new();
+    tmp_LSW = tcg_temp_new();
 
     switch (op2) {
     case OPC2_32_RRRR_DEXTR:
@@ -8431,10 +8434,19 @@ static void decode_rrrr_extract_insert(DisasContext *ctx)
         if (r1 == r2) {
             tcg_gen_rotl_tl(cpu_gpr_d[r4], cpu_gpr_d[r1], tmp_pos);
         } else {
-            tcg_gen_shl_tl(tmp_width, cpu_gpr_d[r1], tmp_pos);
+        	TCGv temp0, temp32;
+        	temp32 = tcg_const_tl(32);
+            temp0 = tcg_const_tl(0);
+        	tcg_gen_shl_tl(tmp_MSW, cpu_gpr_d[r1], tmp_pos);
             tcg_gen_subfi_tl(tmp_pos, 32, tmp_pos);
-            tcg_gen_shr_tl(tmp_pos, cpu_gpr_d[r2], tmp_pos);
-            tcg_gen_or_tl(cpu_gpr_d[r4], tmp_width, tmp_pos);
+            //shr 32 will be ignored, only 0...31 is allowed
+            tcg_gen_shr_tl(tmp_LSW, cpu_gpr_d[r2], tmp_pos);
+            //if the shr is 32 clear tmp_LSW
+            tcg_gen_movcond_tl(TCG_COND_EQ, tmp_LSW, tmp_pos, temp32,
+                                       temp0, tmp_LSW);
+            tcg_gen_or_tl(cpu_gpr_d[r4], tmp_MSW, tmp_LSW);
+            tcg_temp_free(temp32);
+            tcg_temp_free(temp0);
         }
         break;
     case OPC2_32_RRRR_EXTR:
@@ -8464,8 +8476,9 @@ static void decode_rrrr_extract_insert(DisasContext *ctx)
     }
     tcg_temp_free(tmp_pos);
     tcg_temp_free(tmp_width);
+    tcg_temp_free(tmp_MSW);
+    tcg_temp_free(tmp_LSW);
 }
-
 /* RRRW format */
 static void decode_rrrw_extract_insert(DisasContext *ctx)
 {
