@@ -154,6 +154,10 @@ For version history and release notes, please visit
 `<https://wiki.qemu.org/ChangeLog/>`_ or look at the git history for
 more detailed information.
 
+Running Simos 8.5 example
+=========================
+...qemu/build/qemu-system-tricore -machine tricore_s18 -kernel path-to-simos85_sboot -device loader,file=path-to-simos85_sboot,addr=0x80000000 -singlestep -s -S
+
 
 Contact
 =======
