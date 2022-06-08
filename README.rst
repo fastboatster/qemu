@@ -156,7 +156,8 @@ more detailed information.
 
 Running Simos 8.5 example
 =========================
-...qemu/build/qemu-system-tricore -machine tricore_s18 -kernel path-to-simos85_sboot -device loader,file=path-to-simos85_sboot,addr=0x80000000 -singlestep -s -S
+.. code-block:: shell
+  ...qemu/build/qemu-system-tricore -machine tricore_s18 -kernel path-to-simos85_sboot -device loader,file=path-to-simos85_sboot,addr=0x80000000 -singlestep -s -S
 
 
 Contact
